@@ -3,7 +3,7 @@
 
 
 AudioDecoder::AudioDecoder():
-    codec(nullptr),c(nullptr),parser(nullptr),pkt(nullptr),decoded_frame(nullptr),sfmt(AV_SAMPLE_FMT_NONE)
+   sfmt(AV_SAMPLE_FMT_NONE)
 {
 
 }
@@ -11,60 +11,21 @@ AudioDecoder::AudioDecoder():
 AudioDecoder::~AudioDecoder()
 {
     avcodec_free_context(&c);
-    av_parser_close(parser);
-    av_frame_free(&decoded_frame);
-    av_packet_free(&pkt);
 }
 
-bool AudioDecoder::initialize(AVCodecID codec_id)
-{
-    pkt = av_packet_alloc();
- 
-    /* find the MPEG audio decoder */
-    codec = avcodec_find_decoder(AV_CODEC_ID_MP2);
-    if (!codec) {
-        fprintf(stderr, "Codec not found\n");
-        exit(1);
-    }
- 
-    parser = av_parser_init(codec->id);
-    if (!parser) {
-        fprintf(stderr, "Parser not found\n");
-        exit(1);
-    }
- 
-    c = avcodec_alloc_context3(codec);
-    if (!c) {
-        fprintf(stderr, "Could not allocate audio codec context\n");
-        exit(1);
-    }
- 
-    /* open it */
-    if (avcodec_open2(c, codec, NULL) < 0) {
-        fprintf(stderr, "Could not open codec\n");
-        exit(1);
-    }
-    isinit = true;
-    return true;
-}
-
-bool AudioDecoder::loadPacket(uint8_t *&data, size_t& size){
+bool AudioDecoder::parsePacket(uint8_t *&data, size_t& size,AVPacket* pkt){
     int ret = 0;
-    if(!decoded_frame){
-        if(!(decoded_frame = av_frame_alloc())){
-            fprintf(stderr,"could not allocate audio frame");
-            exit(1);
-        }
-    }
     ret = av_parser_parse2(parser, c, &pkt->data, &pkt->size,
                             data, size,
                             AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
     data +=ret;
     size -= ret;
-    return pkt->size;
+    return true;
 }
 
-bool AudioDecoder::sendPacketAndReceiveFrame()
+
+
+bool AudioDecoder::sendPacketAndReceiveFrame(AVPacket* pkt)
 {
     int i ,ch;
     int ret,data_size;
@@ -90,9 +51,13 @@ bool AudioDecoder::sendPacketAndReceiveFrame()
 
 
 bool AudioDecoder::flush(){
-    pkt->data = nullptr;
-    pkt->size = 0;
-    sendPacketAndReceiveFrame();
+    int ret = avcodec_send_packet(c, nullptr);
+    if (ret < 0) {
+        std::cerr << "Error sending flush packet for decoding" << std::endl;
+        return false;
+    }
+    ret = avcodec_receive_frame(c, decoded_frame);
+    if (ret< 0 ) return false;
     return true;
 }
 
@@ -117,3 +82,4 @@ int AudioDecoder::get_channels() const
 {
     return c->channels;
 }
+

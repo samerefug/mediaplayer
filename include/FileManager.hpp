@@ -1,25 +1,26 @@
 #include <string>
 #include "baseDecoder.hpp"
 #include "frameWrite.hpp"
+#include "demuxer.hpp"
 
 
 
 class FileManager {
 public:
-    FileManager(const std::string& inputPath, const std::string& outputPath,MediaType type,BaseDecoder* decoder);
+    FileManager();
     ~FileManager();
-    void process();
+    void process_raw(const std::string& inputPath,
+                     const std::string& outputPath,
+                     MediaType mediaType,
+                     BaseDecoder* decoder
+                    );
+
+    void process_mux(const std::string& inputPath,
+                     const std::string& outputPath,
+                     Demuxer* demuxer,
+                     BaseDecoder* decoder_audio,
+                     BaseDecoder* decoder_video);
 
 private:
-    std::string inputFilePath;
-    std::string outputFilePath;
-    FILE* inputFile;
-
-    BaseDecoder* decoder;
-    std::unique_ptr<FrameWriter>writer;
-
-    const int bufferSize = INBUF_SIZE;
-    MediaType mediaType;
-    bool writerInitialized = false;
-    void initializeWriter(const AVFrame* frame);
+    std::string buildOutputFilePath(const std::string& outputDir, const std::string& inputPath, const std::string& newSuffix);
 };
