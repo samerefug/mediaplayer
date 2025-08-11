@@ -80,6 +80,6 @@ int AudioDecoder::get_bytes_per_sample() const
 
 int AudioDecoder::get_channels() const
 {
-    return c->channels;
+    return c->ch_layout.nb_channels;
 }
 

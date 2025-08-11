@@ -27,7 +27,9 @@
       virtual int get_bytes_per_sample() const { return 0; }
       virtual int get_channels() const { return 0; }
       AVCodecID  get_codec_id() const {return codec->id;}
-
+      AVSampleFormat get_sample_fmt();
+      int get_sample_rate();
+      uint64_t get_ch();
     protected:
         bool isinit;
         const AVCodec *codec;
@@ -42,6 +44,18 @@ inline int BaseDecoder::set_parameter_bystreams(AVStream* st){
       fprintf(stderr, "Failed to copy codec parameters to decoder context\n");
     }
     return ret;
+}
+inline AVSampleFormat BaseDecoder::get_sample_fmt(){
+    return c->sample_fmt;
+}
+
+inline uint64_t BaseDecoder::get_ch(){
+    return c->channel_layout;
+}
+
+
+inline int BaseDecoder::get_sample_rate(){
+    return c->sample_rate;
 }
 
 
