@@ -1,13 +1,26 @@
 #include "VideoEncoder.hpp"
 
 
-bool VideoEncoder::init(){
+bool VideoEncoder::init(const char* name, AVCodecID id,AVDictionary* opt_arg){
     int ret;
-    codec = avcodec_find_encoder_by_name(codec_name);
-    if (!codec) { 
-        fprintf(stderr, "Codec '%s' not found\n", codec_name); 
-        exit(1); 
+    if (!name && id == AV_CODEC_ID_NONE) {
+        id = AV_CODEC_ID_H264;  // 默认H264
     }
+
+    if(name){
+        codec = avcodec_find_encoder_by_name(name);
+        if (!codec) { 
+            fprintf(stderr, "Codec '%s' not found\n", name); 
+            exit(1); 
+        }
+    }else if(id != AV_CODEC_ID_NONE){
+        codec = avcodec_find_encoder(id);
+        if (!codec) {
+            fprintf(stderr, "Codec id '%d' not found\n", id);
+            exit(1);
+        }
+    }
+
     c = avcodec_alloc_context3(codec);
     if (!c) { 
         fprintf(stderr, "Could not allocate video codec context\n"); 
@@ -18,8 +31,8 @@ bool VideoEncoder::init(){
     // pkt = av_packet_alloc(); if (!pkt) exit(1);
 
     c->bit_rate = 400000;
-    c->width = 352;
-    c->height = 288;
+    c->width = 960;
+    c->height = 400;
 
     c->time_base = (AVRational){1,25};
     c->framerate = (AVRational){25,1};
@@ -37,56 +50,40 @@ bool VideoEncoder::init(){
         exit(1); 
     }
 
-    encode_frame = av_frame_alloc();
-    if (!encode_frame) { 
-        fprintf(stderr, "Could not allocate video frame\n"); 
-        exit(1); 
-    } 
-    encode_frame->format = c->pix_fmt; 
-    encode_frame->width = c->width; 
-    encode_frame->height = c->height; 
-    ret = av_frame_get_buffer(encode_frame, 0); 
-    if (ret < 0) { 
-        fprintf(stderr, "Could not allocate the video frame data\n"); 
-        exit(1); 
-    }
     pts = 0;
     return true;
 }
 
- AVPacket* VideoEncoder::encode(uint8_t* yuv_data,AVPacket*pkt) {
-    // 填充 YUV 数据
-    if (!pkt) return nullptr;
+ int VideoEncoder::encode(AVFrame* encode_frame, PacketCallback callback) {
     int ret;
-    if (yuv_data) {
-            // 填充 YUV 数据到 AVFrame
-            av_image_fill_arrays(encode_frame->data, encode_frame->linesize, yuv_data,
-                                c->pix_fmt, c->width, c->height, 1);
-            encode_frame->pts = pts++;
-
-            ret = avcodec_send_frame(c, encode_frame);
-            if (ret < 0) {
-                fprintf(stderr, "Error sending frame\n");
-                exit(1);
-            }
+    ret = avcodec_send_frame(c, encode_frame);
+    if(!encode_frame) { 
+        fprintf(stderr, "flush\n");
+    }
+    if (ret < 0) {
+        if (encode_frame) {
+            fprintf(stderr, "Error sending frame to encoder\n");
         } else {
-            // flush 编码器：没有更多帧
-            ret = avcodec_send_frame(c, nullptr);
-            if (ret < 0) {
-                fprintf(stderr, "Error flushing encoder\n");
-                return nullptr;
-            }
+            fprintf(stderr, "Error flushing encoder video\n");
+        }
+        exit(1);
     }
-
-    ret = avcodec_receive_packet(c, pkt);
-    if (ret >= 0) {
-        return pkt; // 成功编码
-    } else if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-        return nullptr; // 暂时没有可用压缩包
-    } else {
-        fprintf(stderr, "Error receiving packet");
-        return nullptr;
+    while (ret >= 0)
+    {
+        AVPacket* pkt = av_packet_alloc();
+        ret = avcodec_receive_packet(c, pkt);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+            av_packet_free(&pkt);
+            break;  
+        } else if (ret < 0) {
+            fprintf(stderr, "Error receiving packet\n");
+            av_packet_free(&pkt);
+            exit(1);
+        }
+        callback(pkt);
+        av_packet_free(&pkt);
     }
+    return ret;
 }
 
 
@@ -95,5 +92,4 @@ void VideoEncoder::close() {
         avcodec_send_frame(c, nullptr);
         avcodec_free_context(&c);
     }
-    if (encode_frame) av_frame_free(&encode_frame);
 }

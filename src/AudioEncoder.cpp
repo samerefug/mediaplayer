@@ -30,6 +30,7 @@ static int select_sample_rate(const AVCodec *codec)
     return best_samplerate;
 }
 
+
 static int select_channel_layout(const AVCodec *codec, AVChannelLayout *dst)
 {
     const AVChannelLayout *p, *best_ch_layout;
@@ -51,12 +52,41 @@ static int select_channel_layout(const AVCodec *codec, AVChannelLayout *dst)
     return av_channel_layout_copy(dst, best_ch_layout);
 }
 
- bool AudioEncoder::init(){
+
+void AudioEncoder::add_adts_header(uint8_t* adtsHeader, int packetLen) {
+    int profile = 2;   // AAC LC
+    int freqIdx = 4;   // 44100Hz
+    int chanCfg = 2;   // stereo
+    int fullLen = packetLen + 7;
+
+    adtsHeader[0] = 0xFF;
+    adtsHeader[1] = 0xF1;
+    adtsHeader[2] = ((profile-1)<<6) + (freqIdx<<2) + (chanCfg>>2);
+    adtsHeader[3] = ((chanCfg & 3)<<6) + (fullLen>>11);
+    adtsHeader[4] = (fullLen & 0x7FF)>>3;
+    adtsHeader[5] = ((fullLen & 7)<<5) + 0x1F;
+    adtsHeader[6] = 0xFC;
+}
+ bool AudioEncoder::init(const char* name, AVCodecID id, AVDictionary* opt_arg){
     int ret;
-    codec = avcodec_find_encoder(AV_CODEC_ID_MP2);
-    if (!codec) {
-        fprintf(stderr, "Codec not found\n");
-        exit(1);
+    AVDictionary *opt = nullptr;
+
+    if (!name && id == AV_CODEC_ID_NONE) {
+        id = AV_CODEC_ID_AAC;  // 默认AAC
+    }
+
+    if(name){
+        codec = avcodec_find_encoder_by_name(name);
+        if (!codec) { 
+            fprintf(stderr, "Codec '%s' not found\n", name); 
+            exit(1); 
+        }
+    }else if(id != AV_CODEC_ID_NONE){
+        codec = avcodec_find_encoder(id);
+        if (!codec) {
+            fprintf(stderr, "Codec id '%d' not found\n", id);
+            exit(1);
+        }
     }
  
     c = avcodec_alloc_context3(codec);
@@ -66,8 +96,7 @@ static int select_channel_layout(const AVCodec *codec, AVChannelLayout *dst)
     }
  
     c->bit_rate = 64000;
- 
-    c->sample_fmt = AV_SAMPLE_FMT_S16;
+    c->sample_fmt = AV_SAMPLE_FMT_FLTP;
     if (!check_sample_fmt(codec, c->sample_fmt)) {
         fprintf(stderr, "Encoder does not support sample format %s",
                 av_get_sample_fmt_name(c->sample_fmt));
@@ -75,90 +104,66 @@ static int select_channel_layout(const AVCodec *codec, AVChannelLayout *dst)
     }
  
     c->sample_rate = select_sample_rate(codec);
+
     ret = select_channel_layout(codec, &c->ch_layout);
+    c->channels = c->ch_layout.nb_channels;
     if (ret < 0)
         exit(1);
- 
-    if (avcodec_open2(c, codec, NULL) < 0) {
+    
+    av_dict_copy(&opt,opt_arg,0);
+    if (avcodec_open2(c, codec, &opt) < 0) {
         fprintf(stderr, "Could not open codec\n");
         exit(1);
     }
-
-    encode_frame = av_frame_alloc();
-    if (!encode_frame) {
-        fprintf(stderr, "Could not allocate audio frame\n");
-        exit(1);
-    }
- 
-    encode_frame->nb_samples = c->frame_size;
-    encode_frame->format     = c->sample_fmt;
-    ret = av_channel_layout_copy(&encode_frame->ch_layout, &c->ch_layout);
-    if (ret < 0)
-        exit(1);
- 
-    ret = av_frame_get_buffer(encode_frame, 0);
-    if (ret < 0) {
-        fprintf(stderr, "Could not allocate audio data buffers\n");
-        exit(1);
-    }
+    printf("Audio channels: %d\n", c->channels);
     return true;
  }
 
  void AudioEncoder::close(){
     if (!c) 
         return;
-    if (encode_frame) {
-        av_frame_free(&encode_frame);
-        encode_frame = nullptr;
-    }
     if (c) {
         avcodec_free_context(&c);
         c = nullptr;
     }
  }
 
- AVPacket* AudioEncoder::encode(uint8_t* pcm_data,AVPacket*pkt){
+int AudioEncoder::encode(AVFrame* encode_frame, PacketCallback callback){
     int ret;
-
-    if (!pcm_data) {
-        ret = avcodec_send_frame(c, nullptr); 
-        if (ret < 0) {
-            fprintf(stderr, "Error sending flush frame\n");
-            return nullptr;
+    ret = avcodec_send_frame(c, encode_frame);
+    if(!encode_frame) { 
+        fprintf(stderr, "flush\n");
+    }
+    if (ret < 0) {
+        if (encode_frame) {
+            fprintf(stderr, "Error sending frame to encoder\n");
+        } else {
+            fprintf(stderr, "Error flushing encoder audio\n");
         }
-
+        exit(1);
+    }
+    while(ret >=0){
+        AVPacket* pkt = av_packet_alloc();
         ret = avcodec_receive_packet(c, pkt);
         if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-            return nullptr;
+            av_packet_free(&pkt);
+            break;  
         } else if (ret < 0) {
-            fprintf(stderr, "Error receiving packet during flush\n");
-            return nullptr;
+            fprintf(stderr, "Error receiving packet\n");
+            av_packet_free(&pkt);
+            exit(1);
         }
-        return pkt; 
-    }   
+        //本地播放aac添加adts头
+        // uint8_t adtsHeader[7];
+        // add_adts_header(adtsHeader, pkt->size);
 
-    ret = av_frame_make_writable(encode_frame);
-    if (ret < 0) {
-        fprintf(stderr, "Frame not writable\n");
-        return nullptr;
+        // uint8_t* buffer = new uint8_t[pkt->size + 7];
+        // memcpy(buffer, adtsHeader, 7);
+        // memcpy(buffer + 7, pkt->data, pkt->size);
+        // pkt->data = buffer;
+        // pkt->size = pkt->size + 7;
+        callback(pkt);
+        av_packet_free(&pkt);
     }
-
-    int channels = encode_frame->ch_layout.nb_channels;
-    int bytes_per_sample = av_get_bytes_per_sample((AVSampleFormat)encode_frame->format);
-
-    memcpy(encode_frame->data[0], pcm_data, encode_frame->nb_samples * channels * bytes_per_sample);
-    ret = avcodec_send_frame(c, encode_frame);
-    if (ret < 0) {
-        fprintf(stderr, "Error sending frame to encoder\n");
-        return nullptr;
-    }
-
-    ret = avcodec_receive_packet(c, pkt);
-    if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-        return nullptr;  
-    } else if (ret < 0) {
-        fprintf(stderr, "Error encoding audio frame\n");
-        return nullptr;
-    }
-    return pkt;
- }
+    return ret;
+}
