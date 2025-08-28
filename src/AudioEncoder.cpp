@@ -1,7 +1,7 @@
 #include "AudioEncoder.hpp"
 
 
-static int check_sample_fmt(const AVCodec *codec, enum AVSampleFormat sample_fmt)
+int AudioEncoder::check_sample_fmt(const AVCodec *codec, enum AVSampleFormat sample_fmt)
 {
     const enum AVSampleFormat *p = codec->sample_fmts;
  
@@ -13,17 +13,17 @@ static int check_sample_fmt(const AVCodec *codec, enum AVSampleFormat sample_fmt
     return 0;
 }
 
-static int select_sample_rate(const AVCodec *codec)
+int AudioEncoder::select_sample_rate(const AVCodec *codec,int preferred_rate)
 {
     const int *p;
-    int best_samplerate = 0;
+    int best_samplerate = preferred_rate;
  
     if (!codec->supported_samplerates)
         return 44100;
  
     p = codec->supported_samplerates;
     while (*p) {
-        if (!best_samplerate || abs(44100 - *p) < abs(44100 - best_samplerate))
+        if (abs(44100 - *p) < abs(44100 - best_samplerate))
             best_samplerate = *p;
         p++;
     }
@@ -31,26 +31,52 @@ static int select_sample_rate(const AVCodec *codec)
 }
 
 
-static int select_channel_layout(const AVCodec *codec, AVChannelLayout *dst)
-{
-    const AVChannelLayout *p, *best_ch_layout;
-    int best_nb_channels   = 0;
-     AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO;
-    if (!codec->ch_layouts)
+int AudioEncoder::select_channel_layout(const AVCodec* codec, AVChannelLayout* dst, int preferred_channels) {
+    const AVChannelLayout* p;
+    const AVChannelLayout* best_ch_layout = nullptr;
+    int best_nb_channels = 0;
+
+    // 根据偏好声道数选择布局
+    if (preferred_channels == 1) {
+        AVChannelLayout mono = AV_CHANNEL_LAYOUT_MONO;
+        return av_channel_layout_copy(dst, &mono);
+    } else if (preferred_channels == 2) {
+        AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO;
         return av_channel_layout_copy(dst, &stereo);
- 
+    }
+
+    if (!codec->ch_layouts) {
+        AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO;
+        return av_channel_layout_copy(dst, &stereo);
+    }
+
     p = codec->ch_layouts;
-    while (p->nb_channels) {
-        int nb_channels = p->nb_channels;
- 
-        if (nb_channels > best_nb_channels) {
-            best_ch_layout   = p;
-            best_nb_channels = nb_channels;
+    while (p && p->nb_channels) {
+        if (abs(p->nb_channels - preferred_channels) < abs(best_nb_channels - preferred_channels)) {
+            best_ch_layout = p;
+            best_nb_channels = p->nb_channels;
         }
         p++;
     }
-    return av_channel_layout_copy(dst, best_ch_layout);
+
+    if (best_ch_layout) {
+        return av_channel_layout_copy(dst, best_ch_layout);
+    }
+
+    AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO;
+    return av_channel_layout_copy(dst, &stereo);
 }
+
+void AudioEncoder::setAudioParams(int sample_rate, int channels, int bit_rate) {
+    if (c) {
+        fprintf(stderr, "Cannot change parameters after initialization\n");
+        return;
+    }
+    sample_rate_ = sample_rate;
+    channels_ = channels;
+    bit_rate_ = bit_rate;
+}
+
 
 
 void AudioEncoder::add_adts_header(uint8_t* adtsHeader, int packetLen) {
@@ -68,9 +94,11 @@ void AudioEncoder::add_adts_header(uint8_t* adtsHeader, int packetLen) {
     adtsHeader[6] = 0xFC;
 }
  bool AudioEncoder::init(const char* name, AVCodecID id, AVDictionary* opt_arg){
-    int ret;
+    if(c){
+        fprintf(stderr,"Audio already initialized\n");
+        return false;
+    }
     AVDictionary *opt = nullptr;
-
     if (!name && id == AV_CODEC_ID_NONE) {
         id = AV_CODEC_ID_AAC;  // 默认AAC
     }
@@ -79,42 +107,52 @@ void AudioEncoder::add_adts_header(uint8_t* adtsHeader, int packetLen) {
         codec = avcodec_find_encoder_by_name(name);
         if (!codec) { 
             fprintf(stderr, "Codec '%s' not found\n", name); 
-            exit(1); 
+            return false;
         }
     }else if(id != AV_CODEC_ID_NONE){
         codec = avcodec_find_encoder(id);
         if (!codec) {
             fprintf(stderr, "Codec id '%d' not found\n", id);
-            exit(1);
+            return false;
         }
     }
  
     c = avcodec_alloc_context3(codec);
     if (!c) {
         fprintf(stderr, "Could not allocate audio codec context\n");
-        exit(1);
+        return false;
     }
  
-    c->bit_rate = 64000;
-    c->sample_fmt = AV_SAMPLE_FMT_FLTP;
+    c->bit_rate = bit_rate_;
+    c->sample_fmt = target_sample_fmt_;
+    c->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+    //检查并选择采样格式
     if (!check_sample_fmt(codec, c->sample_fmt)) {
         fprintf(stderr, "Encoder does not support sample format %s",
                 av_get_sample_fmt_name(c->sample_fmt));
-        exit(1);
+        return false;
     }
  
-    c->sample_rate = select_sample_rate(codec);
-
-    ret = select_channel_layout(codec, &c->ch_layout);
-    c->channels = c->ch_layout.nb_channels;
-    if (ret < 0)
-        exit(1);
-    
-    av_dict_copy(&opt,opt_arg,0);
-    if (avcodec_open2(c, codec, &opt) < 0) {
-        fprintf(stderr, "Could not open codec\n");
-        exit(1);
+    c->sample_rate = select_sample_rate(codec,sample_rate_);
+   
+    int ret = select_channel_layout(codec, &c->ch_layout,channels_);
+    if(ret < 0){
+        fprintf(stderr,"Could not select channel layout \n");
+        avcodec_free_context(&c);
+        return false;
     }
+    c->channels = c->ch_layout.nb_channels;
+
+    
+    AVDictionary* opts = nullptr;
+    if (opt_arg) {
+        av_dict_copy(&opts, opt_arg, 0);
+    }
+    if (avcodec_open2(c, codec, &opts) < 0) {
+        fprintf(stderr, "Could not open codec\n");
+        return false;
+    }
+    av_dict_free(&opts);
     printf("Audio channels: %d\n", c->channels);
     return true;
  }
