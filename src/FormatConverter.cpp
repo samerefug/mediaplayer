@@ -199,7 +199,6 @@ if (!audio_converter_initialized_ || !swr_ctx_) {
                                                   (AVRational){1, src_frame->sample_rate},
                                                   (AVRational){1, dst_audio_sample_rate_});
     }
-    
     return av_frame_clone(converted_audio_frame_);
 }
 

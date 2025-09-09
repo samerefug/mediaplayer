@@ -3,7 +3,7 @@
 RawFileDataSource::RawFileDataSource(const std::string& file_path, FileType type)
     : file_path_(file_path), file_type_(type)
     , pcm_sample_rate_(44100), pcm_channels_(2), pcm_format_(AV_SAMPLE_FMT_S16)
-    , pcm_samples_per_frame_(1024), pcm_bytes_per_sample_(2)
+    , pcm_samples_per_frame_(1152), pcm_bytes_per_sample_(2)
     , yuv_width_(1920), yuv_height_(1080), yuv_format_(AV_PIX_FMT_YUV420P)
     , yuv_fps_(25), yuv_frame_size_(0) {
 
@@ -37,13 +37,6 @@ bool RawFileDataSource::open(){
     if(!file_stream_.is_open()){
         fprintf(stderr,"Could not open raw file %s\n" ,file_path_.c_str());
         return false;
-    }
-    if (data_manager_) {
-        if (file_type_ == PCM_FILE) {
-            data_manager_->initAudioBuffer(pcm_sample_rate_, pcm_channels_, AV_SAMPLE_FMT_S32);
-        } else if (file_type_ == YUV_FILE) {
-            data_manager_->initVideoBuffer(yuv_width_, yuv_height_, AV_PIX_FMT_YUV420P);
-        }
     }
     return true;
 }
@@ -90,29 +83,46 @@ void RawFileDataSource::readPCMLoop(){
     while(is_active_ && !file_stream_.eof()){
         file_stream_.read(reinterpret_cast<char*>(temp_buffer.data()), frame_size);
         std::streamsize bytes_read = file_stream_.gcount();
-
-        if(bytes_read > 0){
-            int samples_read = bytes_read / (pcm_channels_ * pcm_bytes_per_sample_);
-            if(pcm_format_ != AV_SAMPLE_FMT_S32){
-                std::vector<int32_t> converted_buffer(samples_read * pcm_channels_);
-                //格式转换16位
-                 if (pcm_format_ == AV_SAMPLE_FMT_S16) {
-                    int16_t* src = reinterpret_cast<int16_t*>(temp_buffer.data());
-                    for (int i = 0; i < samples_read * pcm_channels_; i++) {
-                        converted_buffer[i] = static_cast<int32_t>(src[i]) << 16; 
-                    }
-                }
-
-                //待添加多种格式....
-
-                audioBuffer->addFrame(reinterpret_cast<uint8_t*>(converted_buffer.data()), samples_read);
-            }else{
-                audioBuffer->addFrame(temp_buffer.data(),samples_read);
+        int samples_read = bytes_read /(pcm_channels_ * pcm_bytes_per_sample_);
+        if(bytes_read >0){
+            AVFrame* source_frame = av_frame_alloc();
+            source_frame->sample_rate = pcm_sample_rate_;
+            source_frame->format = pcm_format_;
+            source_frame->nb_samples = samples_read;
+            AVChannelLayout ch_layout;
+            av_channel_layout_default(&ch_layout, pcm_channels_);
+            av_channel_layout_copy(&source_frame->ch_layout, &ch_layout);
+            int ret = av_frame_get_buffer(source_frame, 0);
+            if (ret < 0) {
+                av_frame_free(&source_frame);
+                continue;
             }
-        }
-    }
+            if (av_sample_fmt_is_planar(pcm_format_)) {
+                int bytes_per_sample = pcm_bytes_per_sample_;
+                for (int ch = 0; ch < pcm_channels_; ch++) {
+                    uint8_t* dst = source_frame->data[ch];
+                    const uint8_t* src = temp_buffer.data() + ch * samples_read * bytes_per_sample;
+                    memcpy(dst, src, samples_read * bytes_per_sample);
+                }
+            } else {
+                memcpy(source_frame->data[0], temp_buffer.data(), bytes_read);
+            }
+            AVFrame* final_frame =  av_frame_clone(source_frame);
+            if (format_converter_ && format_converter_->needAudioConversion()) {
+                final_frame = format_converter_->convertAudio(source_frame);
+            }
+            if (final_frame) {
+                audioBuffer->addFrame(final_frame);
+            }
 
+            av_frame_free(&source_frame);
+            av_channel_layout_uninit(&ch_layout);
+        }
+        double frame_duration_sec = static_cast<double>(samples_read) / pcm_sample_rate_;
+        std::this_thread::sleep_for(std::chrono::duration<double>(frame_duration_sec));
+    }
 }
+
 
 void RawFileDataSource::readYUVLoop(){
     if (!data_manager_ || !data_manager_->getVideoBuffer()) {
@@ -126,27 +136,24 @@ void RawFileDataSource::readYUVLoop(){
         file_stream_.read(reinterpret_cast<char*>(frame_buffer.data()), yuv_frame_size_);
         std::streamsize bytes_read = file_stream_.gcount();
         if (bytes_read == static_cast<std::streamsize>(yuv_frame_size_)) {
-            // 如果格式匹配，直接添加
-            if (yuv_format_ == AV_PIX_FMT_YUV420P) {
-                videoBuffer->addFrame(frame_buffer.data(), yuv_frame_size_);
-            } else {
-                // 需要格式转换的情况
-                AVFrame* temp_frame = av_frame_alloc();
-                if (temp_frame) {
-                    temp_frame->format = yuv_format_;
-                    temp_frame->width = yuv_width_;
-                    temp_frame->height = yuv_height_;
-                    
-                    av_image_fill_arrays(temp_frame->data, temp_frame->linesize,
+                AVFrame* source_frame = av_frame_alloc();
+                source_frame->format =yuv_format_;
+                source_frame->width = yuv_width_;
+                source_frame->height = yuv_height_;
+                av_image_fill_arrays(source_frame->data, source_frame->linesize,
                                        frame_buffer.data(), yuv_format_,
                                        yuv_width_, yuv_height_, 1);
-                    
-                    videoBuffer->addFrame(temp_frame);
-                    av_frame_free(&temp_frame);
+                AVFrame* final_frame = av_frame_clone(source_frame);
+                if (format_converter_ && format_converter_->needVideoConversion()) {
+                    final_frame = format_converter_->convertVideo(source_frame);
                 }
-            }
+                videoBuffer->addFrame(final_frame);
+                av_frame_free(&source_frame);
+                av_frame_free(&final_frame);
         } else if (bytes_read > 0) {
             break;
         }
+        auto frame_interval = std::chrono::milliseconds(1000 / yuv_fps_);
+        std::this_thread::sleep_for(frame_interval);
     }
 }

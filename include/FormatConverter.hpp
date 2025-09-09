@@ -27,10 +27,8 @@ public:
     bool needVideoConversion() const { return video_converter_initialized_; }
     bool needAudioConversion() const { return audio_converter_initialized_; }
     
-    // 清理资源
     void cleanup();
 private:
-      // 视频转换相关
     SwsContext* sws_ctx_;
     AVFrame* converted_video_frame_;
     bool video_converter_initialized_;
@@ -38,7 +36,6 @@ private:
     int dst_video_width_, dst_video_height_;
     AVPixelFormat dst_video_format_;
     
-    // 音频转换相关
     SwrContext* swr_ctx_;
     AVFrame* converted_audio_frame_;
     bool audio_converter_initialized_;
@@ -48,7 +45,6 @@ private:
     AVChannelLayout dst_audio_layout_;
     int max_dst_samples_;
     
-    // 内部辅助函数
     bool allocateVideoFrame();
     bool allocateAudioFrame(int nb_samples);
 };

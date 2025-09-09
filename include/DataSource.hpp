@@ -85,9 +85,7 @@ private:
     AVPixelFormat yuv_format_;
     int yuv_fps_;
     size_t yuv_frame_size_;
-    
     std::unique_ptr<std::thread> read_thread_;
-
 };
 
 #endif

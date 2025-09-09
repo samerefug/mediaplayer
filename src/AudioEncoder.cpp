@@ -124,7 +124,7 @@ void AudioEncoder::add_adts_header(uint8_t* adtsHeader, int packetLen) {
     }
  
     c->bit_rate = bit_rate_;
-    c->sample_fmt = target_sample_fmt_;
+    c->sample_fmt = AV_SAMPLE_FMT_S16;
     c->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     //检查并选择采样格式
     if (!check_sample_fmt(codec, c->sample_fmt)) {
@@ -166,11 +166,22 @@ void AudioEncoder::add_adts_header(uint8_t* adtsHeader, int packetLen) {
     }
  }
 
-int AudioEncoder::encode(AVFrame* encode_frame, PacketCallback callback){
+int AudioEncoder::encode(AVFrame* encode_frame){
     int ret;
+    fprintf(stderr, "frame=%p nb_samples=%d format=%d sample_rate=%d channels=%d\n",
+        encode_frame,
+        encode_frame ? encode_frame->nb_samples : -1,
+        encode_frame ? encode_frame->format : -1,
+        encode_frame ? encode_frame->sample_rate : -1,
+        encode_frame ? encode_frame->channels : -1);
+    fprintf(stderr, "ctx=%p codec=%p fmt=%d rate=%d channels=%d\n",
+        c, c ? c->codec : nullptr,
+        c ? c->sample_fmt : -1,
+        c ? c->sample_rate : -1,
+        c ? c->channels : -1);
     ret = avcodec_send_frame(c, encode_frame);
     if(!encode_frame) { 
-        fprintf(stderr, "flush\n");
+        fprintf(stderr, "audio flush\n");
     }
     if (ret < 0) {
         if (encode_frame) {
@@ -178,7 +189,7 @@ int AudioEncoder::encode(AVFrame* encode_frame, PacketCallback callback){
         } else {
             fprintf(stderr, "Error flushing encoder audio\n");
         }
-        exit(1);
+       return ret ;
     }
     while(ret >=0){
         AVPacket* pkt = av_packet_alloc();
@@ -200,8 +211,10 @@ int AudioEncoder::encode(AVFrame* encode_frame, PacketCallback callback){
         // memcpy(buffer + 7, pkt->data, pkt->size);
         // pkt->data = buffer;
         // pkt->size = pkt->size + 7;
-        callback(pkt);
-        av_packet_free(&pkt);
+        {
+            std::lock_guard<std::mutex> lock(packet_mutex);
+            packet_queue_.push(pkt);
+        }
     }
     return ret;
 }

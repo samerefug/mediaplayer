@@ -49,6 +49,7 @@ public:
     void clear();
 
 private:
+    int nb_samples_;
     int sample_rate_;
     int channels_;
     AVSampleFormat sample_fmt_;

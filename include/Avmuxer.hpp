@@ -20,20 +20,22 @@ extern "C"{
     #include <libswresample/swresample.h>
 }
 
+class StreamPublisher;
 class AVMuxer{
     public:
         AVMuxer(const std::string &url_or_file, const std::string &format_name)
             : url(url_or_file), format(format_name), oc(nullptr) {}
         ~AVMuxer(){close();}
         bool init(AVDictionary* opt_arg = nullptr);
-        int writePacket(AVPacket* pkt);
+        void setStreamPublisher(StreamPublisher* publisher) {stream_publisher_ = publisher;}
+        int writePacket(AVPacket* pkt,AVRational timeBase);
         int addVideoStream(AVCodecParameters* codecpar);
         int addAudioStream(AVCodecParameters* codecpar);
-
         int writeHeader();
-
+        int getStreamIndex(AVMediaType type) const;
         void finalize();
         void close();
+        AVRational getStreamTimeBase(AVMediaType type) const;
     public:
         std::string url;
         std::string format;
@@ -47,11 +49,12 @@ class AVMuxer{
             int index;
         };
 
+        StreamPublisher* stream_publisher_;
         std::vector<StreamInfo>stream_;
+        std::mutex write_mutex_;
 
         void log_packet(const AVPacket* pkt);
-
-
+        void notifyPacketWritten(size_t packet_size);
 };
 
 

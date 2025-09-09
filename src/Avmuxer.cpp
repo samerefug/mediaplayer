@@ -1,21 +1,5 @@
 #include "Avmuxer.hpp"
-static void log_packet(const AVFormatContext *fmt_ctx, const AVPacket *pkt)
-{
-    AVRational time_base = fmt_ctx->streams[pkt->stream_index]->time_base;
-
-    double pts_time = (pkt->pts == AV_NOPTS_VALUE) ? -1 : pkt->pts * av_q2d(time_base);
-    double dts_time = (pkt->dts == AV_NOPTS_VALUE) ? -1 : pkt->dts * av_q2d(time_base);
-    double dur_time = (pkt->duration <= 0) ? -1 : pkt->duration * av_q2d(time_base);
-
-    printf("pts:%" PRId64 " pts_time:%0.6f "
-           "dts:%" PRId64 " dts_time:%0.6f "
-           "duration:%" PRId64 " duration_time:%0.6f "
-           "stream_index:%d\n",
-           pkt->pts, pts_time,
-           pkt->dts, dts_time,
-           pkt->duration, dur_time,
-           pkt->stream_index);
-}
+#include "StreamPublisher.hpp"
 bool AVMuxer::init(AVDictionary* opt){
     int ret;
     avformat_alloc_output_context2(&oc, NULL, format.c_str(), url.c_str());
@@ -92,31 +76,32 @@ int AVMuxer::addAudioStream(AVCodecParameters* codecpar){
     return st->index;
 }
 
-int AVMuxer::writePacket(AVPacket* packet) {
+int AVMuxer::writePacket(AVPacket* packet,AVRational timeBase) {
     if (!oc || !packet) {
-        return -1;
+        return 0;
     }
     
     if (packet->stream_index < 0 || packet->stream_index >= (int)oc->nb_streams) {
         fprintf(stderr, "Invalid stream index: %d\n", packet->stream_index);
-        return -1;
+        return 0;
     }
-    
+    std::lock_guard<std::mutex> lock(write_mutex_);
     AVStream* st = oc->streams[packet->stream_index];
-    
-    av_packet_rescale_ts(packet, st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO ? 
-                        (AVRational){1, 25} : (AVRational){1, 48000}, // 这里需要从编码器获取
+
+    av_packet_rescale_ts(packet, timeBase, 
                         st->time_base);
     
+    if(stream_publisher_){
+        stream_publisher_->onPacketSent(packet->size);
+    }
     log_packet(packet);
-    
     int ret = av_interleaved_write_frame(oc, packet);
     if (ret < 0) {
         fprintf(stderr, "Error while writing output packet\n");
-        return ret;
+        return 0;
     }
-    
-    return 0;
+
+    return 1;
 }
 
 int AVMuxer::writeHeader() {
@@ -127,12 +112,13 @@ int AVMuxer::writeHeader() {
     }
     
     printf("File header written successfully\n");
-    return 0;
+    return 1;
 }
 
 
 
 void AVMuxer::finalize() {
+    std::lock_guard<std::mutex> lock(write_mutex_);
     av_write_trailer(oc);
 }
 
@@ -148,6 +134,15 @@ void AVMuxer::close() {
     }
     
     stream_.clear();
+}
+
+int AVMuxer::getStreamIndex(AVMediaType type) const {
+    for(const auto& s :stream_){
+         if (s.st && s.st->codecpar && s.st->codecpar->codec_type == type) {
+            return s.index;
+        }
+    }
+    return -1;
 }
 
 void AVMuxer::log_packet(const AVPacket* pkt) {
@@ -169,4 +164,18 @@ void AVMuxer::log_packet(const AVPacket* pkt) {
            pkt->dts, dts_time,
            pkt->duration, dur_time,
            pkt->stream_index);
+}
+
+AVRational AVMuxer::getStreamTimeBase(AVMediaType type) const {
+    if (!oc) {
+        return AVRational{1, 90000};
+    }
+
+    for (unsigned int i = 0; i < oc->nb_streams; i++) {
+        AVStream* st = oc->streams[i];
+        if (st->codecpar->codec_type == type) {
+            return st->time_base;
+        }
+    }
+    return AVRational{1, 90000};
 }

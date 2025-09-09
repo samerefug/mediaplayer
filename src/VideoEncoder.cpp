@@ -74,12 +74,12 @@ bool VideoEncoder::init(const char* name, AVCodecID id,AVDictionary* opt_arg){
     return true;
 }
 
- int VideoEncoder::encode(AVFrame* encode_frame, PacketCallback callback) {
+ int VideoEncoder::encode(AVFrame* encode_frame) {
     
     int ret;
     ret = avcodec_send_frame(c, encode_frame);
     if(!encode_frame) { 
-        fprintf(stderr, "flush\n");
+        fprintf(stderr, "video flush\n");
     }
     if (ret < 0) {
         if (!encode_frame) {
@@ -110,8 +110,11 @@ bool VideoEncoder::init(const char* name, AVCodecID id,AVDictionary* opt_arg){
             av_packet_free(&pkt);
             return ret;
         }
-        callback(pkt);
-        av_packet_free(&pkt);
+
+        {
+            std::lock_guard<std::mutex> lock(packet_mutex);
+            packet_queue_.push(pkt);
+        }
     }
     return ret;
 }
