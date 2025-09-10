@@ -44,7 +44,7 @@ bool StreamPublisher::start(){
     }
 
     if(rtmp_url_.empty()){
-        printf("should set rtmp_url");
+        printf("should set url");
         return false;
     }
     should_stop_ = false;

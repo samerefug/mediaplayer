@@ -68,6 +68,7 @@ public:
 private:
     void readPCMLoop();
     void readYUVLoop();
+    void fill_frame_from_pcm(AVFrame* frame,uint8_t* pcm_data,int samples_read,std::streamsize bytes_read);
 
     std::string file_path_;
     FileType file_type_;

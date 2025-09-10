@@ -24,8 +24,10 @@ public:
     bool init(const char* name = nullptr, AVCodecID id = AV_CODEC_ID_NONE ,AVDictionary* opt_arg =nullptr) override;
     void close() override;
     int encode(AVFrame* encode_frame) override;
+    int getFrameSize() const;
     void setAudioParams(int sample_rate = 44100,int channels = 2,int bit_rate = 128000);
     void setSampleFormat(AVSampleFormat fmt){target_sample_fmt_ = fmt;}
+
 private:
     static int check_sample_fmt(const AVCodec* codec,enum AVSampleFormat sample_fmt);
     static int select_sample_rate(const AVCodec* codec,int preferred_rate);

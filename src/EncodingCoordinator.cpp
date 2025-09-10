@@ -99,7 +99,7 @@ void EncodingCoordinator::audioEncodingLoop(){
         return;
     }
     int64_t audio_pts = 0;         
-    int nb_samples = 1152;       
+    int nb_samples = audio_encoder_->getFrameSize();       
     while(!should_stop_){
         AVFrame* frame = audio_buffer->getAVFrame(audio_pts,nb_samples);
         if(!frame){

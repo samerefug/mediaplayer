@@ -19,8 +19,8 @@ MediaFormatConverter::~MediaFormatConverter() {
     cleanup();
 }
 
-bool MediaFormatConverter::initVideoConverter(int src_width, int src_height, AVPixelFormat src_format,
-                                             int dst_width, int dst_height, AVPixelFormat dst_format) {
+bool MediaFormatConverter::initVideoConverter(int src_width, int src_height, AVPixelFormat& src_format,
+                                             int dst_width, int dst_height, AVPixelFormat& dst_format) {
     
     if(src_width == dst_width && src_height == dst_height || src_format == dst_format){
         printf("don't need convert");
@@ -101,8 +101,8 @@ AVFrame* MediaFormatConverter::convertVideo(AVFrame* src_frame) {
     return av_frame_clone(converted_video_frame_);
 }
 
-bool MediaFormatConverter::initAudioConverter(AVSampleFormat src_format, int src_sample_rate, AVChannelLayout src_layout,
-                                             AVSampleFormat dst_format, int dst_sample_rate, AVChannelLayout dst_layout) {
+bool MediaFormatConverter::initAudioConverter(AVSampleFormat src_format, int src_sample_rate, AVChannelLayout& src_layout,
+                                             AVSampleFormat dst_format, int dst_sample_rate, AVChannelLayout& dst_layout) {
     if(src_format == dst_format && src_sample_rate == dst_sample_rate && av_channel_layout_compare(&src_layout, &dst_layout) == 0){
         printf("don't need convert");
         return true;
@@ -134,7 +134,7 @@ bool MediaFormatConverter::initAudioConverter(AVSampleFormat src_format, int src
     dst_audio_format_ = dst_format;
     dst_audio_sample_rate_ = dst_sample_rate;
     av_channel_layout_copy(&dst_audio_layout_, &dst_layout);
-    //计算最大输出样本数
+
     max_dst_samples_ = swr_get_out_samples(swr_ctx_, 4096);
     audio_converter_initialized_ = true;
     printf("音频转换器初始化成功: %s %dHz %dch -> %s %dHz %dch\n",

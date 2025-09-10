@@ -15,12 +15,12 @@ class MediaFormatConverter{
 public:
     MediaFormatConverter();
     ~MediaFormatConverter();
-    bool initVideoConverter(int src_width ,int src_height,AVPixelFormat src_format,
-                            int dst_width ,int dst_height,AVPixelFormat dst_format);
+    bool initVideoConverter(int src_width ,int src_height,AVPixelFormat& src_format,
+                            int dst_width ,int dst_height,AVPixelFormat& dst_format);
 
     AVFrame* convertVideo(AVFrame* src_frame);
-    bool initAudioConverter(AVSampleFormat src_format, int src_sample_rate, AVChannelLayout  src_layout,
-                           AVSampleFormat dst_format, int dst_sample_rate, AVChannelLayout dst_layout);
+    bool initAudioConverter(AVSampleFormat src_format, int src_sample_rate, AVChannelLayout&  src_layout,
+                           AVSampleFormat dst_format, int dst_sample_rate, AVChannelLayout& dst_layout);
 
     AVFrame* convertAudio(AVFrame* src_frame);
 
@@ -42,7 +42,7 @@ private:
     
     AVSampleFormat dst_audio_format_;
     int dst_audio_sample_rate_;
-    AVChannelLayout dst_audio_layout_;
+    AVChannelLayout dst_audio_layout_ ={};
     int max_dst_samples_;
     
     bool allocateVideoFrame();

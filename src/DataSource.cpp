@@ -78,11 +78,11 @@ void RawFileDataSource::readPCMLoop(){
     AudioFrameBuffer* audioBuffer = data_manager_->getAudioBuffer();
     size_t frame_size = pcm_bytes_per_sample_* pcm_channels_ *pcm_samples_per_frame_;
     std::vector<uint8_t> temp_buffer(frame_size);
-    std::streamsize bytes_read = file_stream_.gcount();
+    std::streamsize bytes_read;
 
     while(is_active_ && !file_stream_.eof()){
         file_stream_.read(reinterpret_cast<char*>(temp_buffer.data()), frame_size);
-        std::streamsize bytes_read = file_stream_.gcount();
+        bytes_read = file_stream_.gcount();
         int samples_read = bytes_read /(pcm_channels_ * pcm_bytes_per_sample_);
         if(bytes_read >0){
             AVFrame* source_frame = av_frame_alloc();
@@ -97,25 +97,19 @@ void RawFileDataSource::readPCMLoop(){
                 av_frame_free(&source_frame);
                 continue;
             }
-            if (av_sample_fmt_is_planar(pcm_format_)) {
-                int bytes_per_sample = pcm_bytes_per_sample_;
-                for (int ch = 0; ch < pcm_channels_; ch++) {
-                    uint8_t* dst = source_frame->data[ch];
-                    const uint8_t* src = temp_buffer.data() + ch * samples_read * bytes_per_sample;
-                    memcpy(dst, src, samples_read * bytes_per_sample);
-                }
-            } else {
-                memcpy(source_frame->data[0], temp_buffer.data(), bytes_read);
-            }
-            AVFrame* final_frame =  av_frame_clone(source_frame);
+            fill_frame_from_pcm(source_frame,temp_buffer.data(),samples_read,bytes_read);
+            AVFrame* final_frame;
             if (format_converter_ && format_converter_->needAudioConversion()) {
                 final_frame = format_converter_->convertAudio(source_frame);
+                av_frame_free(&source_frame);
+            }else{
+                final_frame = source_frame;
             }
             if (final_frame) {
                 audioBuffer->addFrame(final_frame);
             }
 
-            av_frame_free(&source_frame);
+            av_frame_free(&final_frame);
             av_channel_layout_uninit(&ch_layout);
         }
         double frame_duration_sec = static_cast<double>(samples_read) / pcm_sample_rate_;
@@ -155,5 +149,18 @@ void RawFileDataSource::readYUVLoop(){
         }
         auto frame_interval = std::chrono::milliseconds(1000 / yuv_fps_);
         std::this_thread::sleep_for(frame_interval);
+    }
+}
+
+void RawFileDataSource::fill_frame_from_pcm(AVFrame* frame,uint8_t* pcm_data,int samples_read,std::streamsize bytes_read) 
+{
+    if (av_sample_fmt_is_planar(pcm_format_)) {
+        for (int ch = 0; ch < pcm_channels_; ch++) {
+            uint8_t* dst = frame->data[ch];
+            const uint8_t* src = pcm_data + ch * samples_read * pcm_bytes_per_sample_;
+            memcpy(dst, src, samples_read * pcm_bytes_per_sample_);
+        }
+    } else {
+        memcpy(frame->data[0], pcm_data, bytes_read);
     }
 }

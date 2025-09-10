@@ -25,17 +25,19 @@ public:
 
     struct Config{
         std::string audio_file;
-        int audio_sample_rate = 48000;
-        int audio_channels = 2;
-        int audio_bitrate = 128000;
-        AVCodecID audio_codec = AV_CODEC_ID_MP2;
+        int audio_sample_rate = -1;
+        int audio_channels = -1;
+        int audio_bitrate = -1;
+        AVCodecID audio_codec = AV_CODEC_ID_NONE;
+        AVSampleFormat audio_fmt = AV_SAMPLE_FMT_S16;
 
         std::string video_file;
-        int video_width = 1920;
-        int video_height = 1080;
-        int video_fps = 30;
-        int video_bitrate = 200000;
-        AVCodecID video_codec = AV_CODEC_ID_H264;
+        int video_width = -1;
+        int video_height = -1;
+        int video_fps = -1;
+        int video_bitrate = -1;
+        AVCodecID video_codec = AV_CODEC_ID_NONE;
+        AVPixelFormat video_fmt = AV_PIX_FMT_YUV420P;
 
         std::string rtmp_url;
         std::string output_format = "mp4";
@@ -65,7 +67,8 @@ private:
     std::unique_ptr<AVMuxer> muxer_;
     std::unique_ptr<EncodingCoordinator> coordinator_;
     std::unique_ptr<StreamPublisher> publisher_;
-    std::unique_ptr<MediaFormatConverter> formatConverter_;
+    std::unique_ptr<MediaFormatConverter> audio_formatConverter_;
+    std::unique_ptr<MediaFormatConverter> video_formatConverter_;
 
     mutable std::mutex status_mutex_;
 };

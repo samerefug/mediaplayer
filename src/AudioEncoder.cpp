@@ -124,9 +124,8 @@ void AudioEncoder::add_adts_header(uint8_t* adtsHeader, int packetLen) {
     }
  
     c->bit_rate = bit_rate_;
-    c->sample_fmt = AV_SAMPLE_FMT_S16;
+    c->sample_fmt = target_sample_fmt_;
     c->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-    //检查并选择采样格式
     if (!check_sample_fmt(codec, c->sample_fmt)) {
         fprintf(stderr, "Encoder does not support sample format %s",
                 av_get_sample_fmt_name(c->sample_fmt));
@@ -165,7 +164,13 @@ void AudioEncoder::add_adts_header(uint8_t* adtsHeader, int packetLen) {
         c = nullptr;
     }
  }
-
+int AudioEncoder::getFrameSize() const{
+    if (!c) {
+        fprintf(stderr, "AudioEncoder::getFrameSize called before encoder init\n");
+        return 0;
+    }
+    return c->frame_size;
+}
 int AudioEncoder::encode(AVFrame* encode_frame){
     int ret;
     fprintf(stderr, "frame=%p nb_samples=%d format=%d sample_rate=%d channels=%d\n",
