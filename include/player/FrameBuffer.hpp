@@ -2,8 +2,10 @@
 #define FRAMEBUFFER
 
 #include <memory>
-#include <vector>
 #include <atomic>
+#include <mutex>
+#include <queue>
+#include <condition_variable>
 
 extern "C" {
 #include <libavutil/avutil.h>
@@ -21,18 +23,23 @@ public:
     bool addFrame(AVFrame*frame);
 
     bool getFrame(int frame_index, uint8_t*& frame_data);
-    AVFrame* getAVFrame(int frame_index);
+    AVFrame* getAVFrame();
 
     int getFrameCount() const {return frame_count_;}
     void clear();
+    void close();
 private:
     int width_;
     int height_;
     int frame_count_;
+    int max_frame_count_;
     size_t frame_size_;
-    std::vector<uint8_t> buffer_;
+    std::queue<AVFrame*> buffer_;
     AVPixelFormat pix_fmt_;
-
+    std::condition_variable cond_empty_;
+    std::condition_variable cond_full_;
+    std::mutex buffer_mutex_;
+    bool stopped_;
 };
 
 class AudioFrameBuffer{
@@ -41,21 +48,29 @@ public:
     ~AudioFrameBuffer();
 
     bool getSamples(int start_sample,int nb_samples,uint8_t*& sample_data);
-    AVFrame* getAVFrame(int start_sample,int nb_samples);
+    AVFrame* getAVFrame();
 
     bool addFrame(const uint8_t* sample_data,int nb_samples);
     bool addFrame(AVFrame* frame);
 
     void clear();
-
+    void close();
 private:
     int nb_samples_;
     int sample_rate_;
     int channels_;
     AVSampleFormat sample_fmt_;
     int bytes_per_sample_;
-    std::vector<uint8_t> buffer_;
+
+    std::queue<AVFrame*> buffer_;
+    int max_frame_count_;
     int total_samples_;
+
+    std::condition_variable cond_empty_;
+    std::condition_variable cond_full_;
+    std::mutex buffer_mutex_;
+    bool stopped_;
+
 };
 
 class MediaDataManager {

@@ -81,7 +81,6 @@ bool MediaFormatConverter::allocateVideoFrame() {
 AVFrame* MediaFormatConverter::convertVideo(AVFrame* src_frame) {
 
     if (!video_converter_initialized_ || !sws_ctx_ || !converted_video_frame_) {
-        // 无需转换，直接返回源帧的引用
         printf("converter not init, output src_frame");
         return av_frame_clone(src_frame);
     }

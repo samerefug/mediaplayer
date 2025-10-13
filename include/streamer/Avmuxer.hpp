@@ -6,8 +6,8 @@
 #include <string.h>
 #include <math.h>
 #include <string>
-#include <AudioEncoder.hpp>
-#include <VideoEncoder.hpp>
+#include <streamer/AudioEncoder.hpp>
+#include <streamer/VideoEncoder.hpp>
 extern "C"{
     #include <libavutil/avassert.h>
     #include <libavutil/channel_layout.h>

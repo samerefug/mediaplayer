@@ -1,4 +1,4 @@
-#include "DataSource.hpp"
+#include "streamer/DataSource.hpp"
 
 RawFileDataSource::RawFileDataSource(const std::string& file_path, FileType type)
     : file_path_(file_path), file_type_(type)
@@ -98,17 +98,15 @@ void RawFileDataSource::readPCMLoop(){
                 continue;
             }
             fill_frame_from_pcm(source_frame,temp_buffer.data(),samples_read,bytes_read);
-            AVFrame* final_frame;
+            AVFrame* final_frame=nullptr;
             if (format_converter_ && format_converter_->needAudioConversion()) {
                 final_frame = format_converter_->convertAudio(source_frame);
-                av_frame_free(&source_frame);
+               
             }else{
-                final_frame = source_frame;
+                final_frame = av_frame_clone(source_frame);
             }
-            if (final_frame) {
-                audioBuffer->addFrame(final_frame);
-            }
-
+            audioBuffer->addFrame(final_frame);
+            av_frame_free(&source_frame);
             av_frame_free(&final_frame);
             av_channel_layout_uninit(&ch_layout);
         }
@@ -137,9 +135,11 @@ void RawFileDataSource::readYUVLoop(){
                 av_image_fill_arrays(source_frame->data, source_frame->linesize,
                                        frame_buffer.data(), yuv_format_,
                                        yuv_width_, yuv_height_, 1);
-                AVFrame* final_frame = av_frame_clone(source_frame);
+                AVFrame* final_frame = nullptr;
                 if (format_converter_ && format_converter_->needVideoConversion()) {
                     final_frame = format_converter_->convertVideo(source_frame);
+                }else{
+                    final_frame = av_frame_clone(source_frame);
                 }
                 videoBuffer->addFrame(final_frame);
                 av_frame_free(&source_frame);

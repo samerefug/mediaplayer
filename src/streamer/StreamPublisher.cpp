@@ -1,4 +1,4 @@
-#include "StreamPublisher.hpp"
+#include "streamer/StreamPublisher.hpp"
 
 StreamPublisher::StreamPublisher()
      : muxer_(nullptr)

@@ -1,5 +1,5 @@
-#include "Avmuxer.hpp"
-#include "StreamPublisher.hpp"
+#include "streamer/Avmuxer.hpp"
+#include "streamer/StreamPublisher.hpp"
 bool AVMuxer::init(AVDictionary* opt){
     int ret;
     avformat_alloc_output_context2(&oc, NULL, format.c_str(), url.c_str());
@@ -44,6 +44,9 @@ int AVMuxer::addVideoStream(AVCodecParameters* codecpar){
     info.st = st;
     info.index = st->index;
     stream_.push_back(info);
+
+    avcodec_parameters_free(&codecpar);
+
     return st->index;
 
 }
@@ -73,6 +76,8 @@ int AVMuxer::addAudioStream(AVCodecParameters* codecpar){
     info.index = st->index;
     stream_.push_back(info);
     
+    avcodec_parameters_free(&codecpar);
+
     return st->index;
 }
 

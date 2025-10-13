@@ -1,4 +1,4 @@
-#include "LiveStreamer.hpp"
+#include "streamer/LiveStreamer.hpp"
 
 
 static AVSampleFormat get_default_sample_fmt(AVCodecID codec_id) {
@@ -16,17 +16,18 @@ static AVSampleFormat get_default_sample_fmt(AVCodecID codec_id) {
         case AV_CODEC_ID_OPUS:
             return AV_SAMPLE_FMT_FLT;
         default:
-            // 默认给个安全值，比如最常见的 16-bit PCM
             return AV_SAMPLE_FMT_S16;
     }
 }
 
-LiverStreamer::LiverStreamer(){
+LiverStreamer::LiverStreamer():stopped_(false){
 
 }
 
 LiverStreamer::~LiverStreamer(){
-    stop();
+    if (!stopped_) { 
+        stop();
+    }
 }
 
 bool LiverStreamer::configure(const Config& config){
@@ -208,11 +209,11 @@ bool LiverStreamer::start(){
 }
 
 void LiverStreamer::stop(){
-    if(audio_source_) audio_source_->stop();
-    if(video_source_) video_source_->stop();
-
-    if(coordinator_) coordinator_->stop();
-    if(muxer_) muxer_->finalize();
-
-    if(publisher_) publisher_->stop();
+    if (stopped_) return; 
+    if (audio_source_) audio_source_->stop();
+    if (video_source_) video_source_->stop();
+    if (coordinator_) coordinator_->stop();
+    if (muxer_) muxer_->finalize();
+    if (publisher_) publisher_->stop();
+    stopped_ = true;
 }

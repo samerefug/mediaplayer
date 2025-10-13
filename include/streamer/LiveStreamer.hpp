@@ -69,7 +69,7 @@ private:
     std::unique_ptr<StreamPublisher> publisher_;
     std::unique_ptr<MediaFormatConverter> audio_formatConverter_;
     std::unique_ptr<MediaFormatConverter> video_formatConverter_;
-
+    bool stopped_;
     mutable std::mutex status_mutex_;
 };
 

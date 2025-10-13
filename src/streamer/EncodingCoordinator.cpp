@@ -1,4 +1,4 @@
-#include "EncodingCoordinator.hpp"
+#include "streamer/EncodingCoordinator.hpp"
 
 EncodingCoordinator::EncodingCoordinator() 
     : data_manager_(nullptr)
@@ -65,6 +65,8 @@ bool EncodingCoordinator::start(){
 }
 
 void EncodingCoordinator::stop(){
+    printf("Encoding coordinator stopped start\n");
+    data_manager_->clearAll();
     should_stop_ = true;
     is_running_ =false;
 
@@ -89,7 +91,7 @@ void EncodingCoordinator::stop(){
         packet_queue_.pop();
     }
 
-    printf("Encoding coordinator stopped\n");
+    printf("Encoding coordinator stopped end\n");
 }
 
 void EncodingCoordinator::audioEncodingLoop(){
@@ -98,10 +100,9 @@ void EncodingCoordinator::audioEncodingLoop(){
         fprintf(stderr,"Audio buffer not available\n");
         return;
     }
-    int64_t audio_pts = 0;         
-    int nb_samples = audio_encoder_->getFrameSize();       
+    int64_t audio_pts = 0;             
     while(!should_stop_){
-        AVFrame* frame = audio_buffer->getAVFrame(audio_pts,nb_samples);
+        AVFrame* frame = audio_buffer->getAVFrame();
         if(!frame){
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;
@@ -149,7 +150,7 @@ void EncodingCoordinator::videoEncodingLoop(){
     }
     int frame_index = 0;
     while(!should_stop_){
-        AVFrame* frame = video_buffer->getAVFrame(frame_index);
+        AVFrame* frame = video_buffer->getAVFrame();
         if(!frame){
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;
@@ -169,6 +170,7 @@ void EncodingCoordinator::videoEncodingLoop(){
                 }
             }
         }
+        av_frame_free(&frame);
     }
     if(video_encoder_){
         video_encoder_->flush();
@@ -194,7 +196,7 @@ void EncodingCoordinator::packetMuxingLoop(){
             return !packet_queue_.empty() || should_stop_;
         });
 
-        if(should_stop_){
+        if(should_stop_ && packet_queue_.empty()){
             break;
         }
         auto pair =packet_queue_.front();

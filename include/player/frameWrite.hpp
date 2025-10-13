@@ -72,7 +72,6 @@ private:
     FILE* outFile = nullptr;
     int frameindex;
 
-    //缓冲区相关
     uint8_t* video_dst_data[4] = {nullptr};
     int video_dst_linesize[4] = {0};
     int video_dst_bufsize = 0;

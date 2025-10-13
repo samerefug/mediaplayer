@@ -1,7 +1,7 @@
 #include <string>
-#include "baseDecoder.hpp"
+#include "BaseDecoder.hpp"
 #include "frameWrite.hpp"
-#include "demuxer.hpp"
+#include "Demuxer.hpp"
 #include "AudioFilter.hpp"
 #include "VideoFilter.hpp"
 #include "FilterParams.hpp"

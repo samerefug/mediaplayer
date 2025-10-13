@@ -1,7 +1,10 @@
+#ifndef AUDIODECODER
+#define AUDIODECODER
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
-#include "baseDecoder.hpp"
+#include "BaseDecoder.hpp"
 extern "C"{
     #include <libavutil/frame.h>
     #include <libavutil/mem.h>
@@ -18,14 +21,12 @@ class AudioDecoder :public BaseDecoder{
         ~AudioDecoder();
 
         bool initialize(AVCodecID codec_id);
-        bool flush();
-        bool parsePacket(uint8_t *&inbuf, size_t& size,AVPacket* pkt);
-        bool sendPacketAndReceiveFrame(AVPacket* pkt);
-        AVFrame *getFrame() const;
         AVSampleFormat getSampleFormat() const;
-        int get_bytes_per_sample()const;
-        int get_channels()const;
-
-    private:
-        enum AVSampleFormat sfmt;
+        int getBytes_per_sample()const;
+        int getChannels()const;
+        int getSampleRate() const;
+        AVRational getTimeBase() const;
+        
 };
+
+#endif

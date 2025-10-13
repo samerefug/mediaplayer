@@ -106,8 +106,6 @@ bool YUVFrameWriter::open() {
     return true;
 }
 
-
-//预先分配校验方式，从背景解码器首先进行校验，再进行一次写帧操作(待加入)
 bool YUVFrameWriter::writeFrame(const AVFrame* frame) {
     if (!frame || !outFile) return false;
         if (video_dst_bufsize == 0) {
